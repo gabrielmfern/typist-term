@@ -267,7 +267,7 @@ struct TypingResults {
 
 fn compute_typing_results(start: Instant, words: Vec<Word>) -> TypingResults {
     let elapsed_time = start.elapsed().as_secs_f32();
-    let raw_wpm = words.len() as f32 / elapsed_time * 60f32;
+
     let correct_characters = words
         .iter()
         .map(|w| w.chars.iter().filter(|c| c.correct).count())
@@ -277,6 +277,8 @@ fn compute_typing_results(start: Instant, words: Vec<Word>) -> TypingResults {
         .map(|w| w.chars.iter().filter(|c| !c.correct).count() + w.extra_written_chars.len())
         .sum::<usize>();
     let characters_typed = incorrect_characters + correct_characters;
+
+    let raw_wpm = (characters_typed as f32 / 5.0f32) / (elapsed_time / 60f32);
     let accuracy = correct_characters as f32 / characters_typed as f32;
     let wpm = raw_wpm * accuracy;
 
@@ -341,7 +343,7 @@ impl TypingTestText for Vec<Word> {
 fn main() {
     let args = args().collect::<Vec<String>>();
     let words_amount = args.get(1).unwrap_or(&"50".to_string()).parse::<i32>()
-        .expect("Se você quiser específicar a quantidade de palavras no teste vai precisar ser um número válido inteiro");
+        .expect("Se você quiser específicar a quantidade de palavras no teste vai precisar ser um número válido inteiro.");
 
     let words: Vec<&str> = WORDS.split("\n").collect();
     initscr();
