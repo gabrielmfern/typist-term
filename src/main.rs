@@ -3,6 +3,7 @@ use ncurses::*;
 use rand::{thread_rng, Rng};
 use std::env::args;
 use std::time::Instant;
+use unidecode::unidecode;
 
 fn from_code_to_key(code: i32) -> Option<String> {
     let result = match code {
@@ -177,7 +178,7 @@ fn make_random_text_from_words(text_words_amount: usize, words: &Vec<&str>) -> V
     let mut result: Vec<Word> = Vec::with_capacity(text_words_amount);
 
     for _ in 0..text_words_amount {
-        let word_index = rng.gen_range(0..(words.len() - 1));
+        let word_index = rng.gen_range(0..words.len());
         let word = words[word_index].to_string();
         result.push(word.into());
     }
@@ -190,7 +191,81 @@ const RED: i16 = 2;
 const YELLOW: i16 = 3;
 const CYAN: i16 = 4;
 
+#[test]
+fn word_should_count_drawn_characters_correctly() {
+    let word = Word {
+        chars: vec![
+            Character {
+                text: "r".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "e".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "l".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "a".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "ç".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "´".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "ã".to_string(),
+                typed: false,
+                correct: false,
+            },
+            Character {
+                text: "o".to_string(),
+                typed: false,
+                correct: false,
+            },
+        ],
+        correct: false,
+        typed: false,
+        written_chars: Vec::default(),
+        extra_written_chars: vec![
+            "b".to_string(),
+            "é".to_string()
+        ],
+    };
+
+    assert_eq!(word.count_drawn_characters(), 9);
+}
+
 impl Word {
+    fn count_drawn_characters(&self) -> usize {
+        let mut typed_text: String = "".into();
+        self.chars.iter().for_each(|char| {
+            if char.text != "'" && char.text != "´" && char.text != "`"
+                && char.text != "~" && char.text != "¨" {
+                typed_text.push_str(&unidecode(&char.text));
+            }
+        });
+        self.extra_written_chars.iter().for_each(|char| {
+            if char != "'" && char != "´" && char != "`"
+                && char != "~" && char != "¨" {
+                typed_text.push_str(&unidecode(&char));
+            }
+        });
+        return typed_text.len();
+    }
+
     fn draw(&self, win: WINDOW, current_char_index: usize, is_current: bool) {
         for (i, char) in self.chars.iter().enumerate() {
             if char.typed && char.correct {
@@ -313,21 +388,21 @@ impl TypingTestText for Vec<Word> {
         current_word_index: usize,
         win_width: i32,
     ) -> () {
-        let mut x = 0;
+        let mut x = 1;
 
         for (i, word) in self.iter().enumerate() {
-            let word_total_characters = (word.chars.len() + word.extra_written_chars.len()) as i32;
-            if word_total_characters >= win_width - x - 3 {
-                x = 0;
+            let drawn_characters = word.count_drawn_characters() as i32;
+            if drawn_characters + x >= win_width {
+                x = 1;
                 waddstr(win, "\n");
             }
-            x += word_total_characters as i32;
+            x += drawn_characters as i32;
             word.draw(win, current_char_index, i == current_word_index);
             if i < self.len() - 1 {
                 let next_word = &self[i + 1];
-                let next_word_total_characters =
-                    (next_word.chars.len() + next_word.extra_written_chars.len()) as i32;
-                if next_word_total_characters < win_width - x - 3 {
+                let next_drawn_characters =
+                    next_word.count_drawn_characters() as i32;
+                if next_drawn_characters + x < win_width {
                     x += 1;
                     waddstr(win, " ");
                 }
@@ -363,12 +438,15 @@ fn main() {
     let mut max_y = 0;
     getmaxyx(stdscr(), &mut max_y, &mut max_x);
 
-    let window_width = (max_x / 2 - 20).min(200);
+    let window_width = (max_x / 2).min(200);
     let window_height = max_y / 2;
     let start_x = (max_x - window_width) / 2;
     let start_y = (max_y - window_height) / 2;
     refresh();
     let win = newwin(window_height, window_width, start_y, start_x);
+    let mut actual_window_height = 0;
+    let mut actual_window_width = 0;
+    getmaxyx(win, &mut actual_window_height, &mut actual_window_width);
     wrefresh(win);
     cbreak();
     curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
@@ -402,7 +480,7 @@ fn main() {
     while current_word_index < words.len() {
         wclear(win);
 
-        words.draw(win, current_char_index, current_word_index, window_width);
+        words.draw(win, current_char_index, current_word_index, actual_window_width);
 
         let characters_typed = words.count_typed_characters();
         let characters_per_time_spent = &format!(
@@ -426,8 +504,7 @@ fn main() {
                 current_char_index -= 1;
             } else if current_word_index > 0 {
                 current_word_index -= 1;
-                current_char_index = words[current_word_index].written_chars.len() - 1;
-                // current_x -= 1;
+                current_char_index = words[current_word_index].written_chars.len();
             }
             word = &mut words[current_word_index];
             if current_char_index >= word.chars.len() {
@@ -436,7 +513,6 @@ fn main() {
                 word.chars[current_char_index].typed = false;
             }
             word.written_chars.pop();
-            // current_x -= 1;
         } else if character != 127 {
             if character == 32 {
                 // SPACE
@@ -448,7 +524,6 @@ fn main() {
                 words[current_word_index].update(&pressed_key, current_char_index);
                 current_char_index += 1;
             }
-            // current_x += 1;
         }
     }
 
